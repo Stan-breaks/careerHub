@@ -5,13 +5,15 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  role: 'admin' | 'student';
-  isActive: boolean;
+  role: string;
   isVerified: boolean;
-  profileImage?: string;
+  verificationToken?: string;
+  resetPasswordToken?: string;
+  resetPasswordExpires?: Date;
   assessmentsTaken: mongoose.Types.ObjectId[];
   enrolledCourses: mongoose.Types.ObjectId[];
-  lastLogin?: Date;
+  skills: string[];
+  experienceLevel: 'beginner' | 'intermediate' | 'advanced';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -20,57 +22,49 @@ const UserSchema: Schema = new Schema(
   {
     name: {
       type: String,
-      required: [true, 'Please provide a name'],
+      required: [true, 'Please provide your name'],
       trim: true,
-      maxlength: [50, 'Name cannot be more than 50 characters'],
     },
     email: {
       type: String,
-      required: [true, 'Please provide an email'],
+      required: [true, 'Please provide your email'],
       unique: true,
       trim: true,
       lowercase: true,
-      match: [
-        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
-        'Please provide a valid email',
-      ],
     },
     password: {
       type: String,
       required: [true, 'Please provide a password'],
       minlength: [6, 'Password must be at least 6 characters long'],
-      select: false,
     },
     role: {
       type: String,
-      enum: ['admin', 'student'],
-      default: 'student',
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
+      enum: ['user', 'admin'],
+      default: 'user',
     },
     isVerified: {
       type: Boolean,
       default: false,
     },
-    profileImage: {
+    verificationToken: String,
+    resetPasswordToken: String,
+    resetPasswordExpires: Date,
+    assessmentsTaken: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Assessment',
+    }],
+    enrolledCourses: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Course',
+    }],
+    skills: [{
       type: String,
-    },
-    assessmentsTaken: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Assessment',
-      },
-    ],
-    enrolledCourses: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Course',
-      },
-    ],
-    lastLogin: {
-      type: Date,
+      trim: true,
+    }],
+    experienceLevel: {
+      type: String,
+      enum: ['beginner', 'intermediate', 'advanced'],
+      default: 'beginner',
     },
   },
   { timestamps: true }
@@ -90,7 +84,7 @@ UserSchema.pre<IUser>('save', async function (next) {
   }
 });
 
-// Create User model if it doesn't exist
+// Create model if it doesn't exist
 const User: Model<IUser> = 
   mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
 

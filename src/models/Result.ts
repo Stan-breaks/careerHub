@@ -9,6 +9,8 @@ export interface IResult extends Document {
   }>;
   score: number;
   recommendations: string[];
+  recommendedCourses: mongoose.Types.ObjectId[];
+  careerPathways: string[];
   completedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -48,6 +50,17 @@ const ResultSchema: Schema = new Schema(
         type: String,
       },
     ],
+    recommendedCourses: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Course',
+      },
+    ],
+    careerPathways: [
+      {
+        type: String,
+      },
+    ],
     completedAt: {
       type: Date,
       default: Date.now,
@@ -60,4 +73,4 @@ const ResultSchema: Schema = new Schema(
 const Result: Model<IResult> = 
   mongoose.models.Result || mongoose.model<IResult>('Result', ResultSchema);
 
-export default Result; 
+export default Result;
