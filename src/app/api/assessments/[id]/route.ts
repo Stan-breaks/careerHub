@@ -4,11 +4,12 @@ import { authOptions } from '@/lib/authOptions';
 import dbConnect from '@/lib/mongodb';
 import Assessment from '@/models/Assessment';
 import mongoose from 'mongoose';
-import { Result } from '@/models/Assessment';
+import Result from '@/models/Result';
+import { recommendCourses } from '@/utils/courseRecommendation';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -24,8 +25,8 @@ export async function GET(
     // Connect to database
     await dbConnect();
     
-    // Get the ID directly from params without destructuring first
-    const id = params.id;
+    // Get the ID from params - await it properly
+    const { id } = await params;
     
     // Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -83,15 +84,19 @@ export async function GET(
   }
 }
 
+interface AnswerInput {
+  questionId: string;
+  selectedOption: string;
+}
+
 // Save assessment results
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
     
-    // Check if user is authenticated
     if (!session) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -99,14 +104,13 @@ export async function POST(
       );
     }
 
-    // Connect to database
     await dbConnect();
     
-    // Get the ID directly from params without destructuring first
-    const id = params.id;
+    const { id } = await params;
     const body = await request.json();
     
-    // Validate required fields
+    console.log('Request body:', JSON.stringify(body, null, 2));
+    
     if (!body.answers || !Array.isArray(body.answers) || body.answers.length === 0) {
       return NextResponse.json(
         { error: 'Assessment answers are required' },
@@ -114,15 +118,13 @@ export async function POST(
       );
     }
     
-    // Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { error: 'Invalid assessment ID' },
         { status: 400 }
       );
     }
-    
-    // Find the assessment
+
     const assessment = await Assessment.findById(id).populate('questions');
     
     if (!assessment) {
@@ -131,52 +133,76 @@ export async function POST(
         { status: 404 }
       );
     }
-    
-    // Validate answers format
-    const answers = body.answers as Array<{questionId: string, selectedOption: string}>;
-    for (const answer of answers) {
-      if (!answer.questionId || !answer.selectedOption) {
-        return NextResponse.json(
-          { error: 'Each answer must include questionId and selectedOption' },
-          { status: 400 }
-        );
-      }
-    }
-    
-    // Calculate score based on selected options
-    const totalScore = calculateScore(assessment, answers);
-    
-    // Generate recommendations based on score and assessment type
-    const recommendations = generateRecommendations(assessment.type, totalScore);
-    
-    // Save the result to the database
+
+    const score = calculateScore(assessment, body.answers);
+    const recommendations = generateRecommendations(assessment.type, score);
+
+    // Get course recommendations first
+    const recommendedCourses = await recommendCourses(
+      new mongoose.Types.ObjectId(session.user.id),
+      new mongoose.Types.ObjectId(id),
+      [{
+        category: assessment.type,
+        score: score
+      }]
+    );
+
+    // Get career pathways based on the assessment type and score
+    const careerPathways = determineCareerPathways([{
+      category: assessment.type,
+      score: score
+    }]);
+
+    // Create new result document with recommendations
     const result = new Result({
-      user: new mongoose.Types.ObjectId(session.user.id),
-      assessment: new mongoose.Types.ObjectId(id),
-      answers: answers.map(answer => ({
-        question: new mongoose.Types.ObjectId(answer.questionId),
-        selectedOption: parseInt(answer.selectedOption) || 0 // Ensure it's a valid number
+      userId: new mongoose.Types.ObjectId(session.user.id),
+      assessmentId: new mongoose.Types.ObjectId(id),
+      answers: body.answers.map((answer: AnswerInput) => ({
+        questionId: new mongoose.Types.ObjectId(answer.questionId),
+        selectedOption: parseInt(answer.selectedOption, 10) || 0
       })),
-      score: totalScore,
-      recommendations: recommendations,
+      score,
+      recommendations,
+      recommendedCourses: recommendedCourses.map(course => course._id),
+      careerPathways,
       completedAt: new Date()
     });
 
+    // Save the result
     await result.save();
-    
-    return NextResponse.json({
+
+    // Redirect to the completion page with the result ID
+    return NextResponse.json({ 
       success: true,
       result: {
-        score: totalScore,
-        recommendations: recommendations,
-        completedAt: new Date()
+        id: result._id,
+        score,
+        recommendations,
+        recommendedCourses: recommendedCourses.map(course => ({
+          courseId: course._id,
+          title: course.title,
+          code: course.code,
+          description: course.description,
+          duration: course.duration,
+          level: course.level,
+          skillsDeveloped: course.skillsDeveloped || [],
+          careerPathways: course.careerPathways || [],
+          score: course.relevanceScore,
+          matchFactors: {
+            careerPathwayMatch: course.relevanceScore * 0.5,
+            levelMatch: course.relevanceScore * 0.3,
+            skillsMatch: course.relevanceScore * 0.2
+          }
+        })),
+        careerPathways,
+        completedAt: result.completedAt
       }
     });
-    
+
   } catch (error) {
-    console.error('Error saving assessment result:', error);
+    console.error('Error saving assessment results:', error);
     return NextResponse.json(
-      { error: 'Failed to save assessment result' },
+      { error: 'Failed to save assessment results' },
       { status: 500 }
     );
   }
@@ -186,22 +212,15 @@ export async function POST(
 function calculateScore(assessment: any, answers: Array<{questionId: string, selectedOption: string}>): number {
   let totalScore = 0;
   
-  for (const answer of answers) {
-    const question = assessment.questions.find((q: any) => 
-      q._id.toString() === answer.questionId
-    );
-    
+  answers.forEach(answer => {
+    const question = assessment.questions.find((q: any) => q._id.toString() === answer.questionId);
     if (question) {
-      // Find option by ID (which is sent as a string from frontend)
-      const option = question.options.find((o: any) => 
-        o._id.toString() === answer.selectedOption
-      );
-      
-      if (option && typeof option.value === 'number') {
-        totalScore += option.value;
+      const selectedOption = question.options.find((o: any) => o._id.toString() === answer.selectedOption);
+      if (selectedOption) {
+        totalScore += selectedOption.value;
       }
     }
-  }
+  });
   
   return totalScore;
 }
@@ -210,61 +229,90 @@ function calculateScore(assessment: any, answers: Array<{questionId: string, sel
 function generateRecommendations(assessmentType: string, score: number): string[] {
   const recommendations: string[] = [];
   
-  if (assessmentType === 'personality') {
-    if (score >= 80) {
-      recommendations.push('You show strong leadership qualities.');
-      recommendations.push('Consider roles that involve managing teams or projects.');
-      recommendations.push('Your analytical thinking is highly developed.');
-    } else if (score >= 60) {
-      recommendations.push('You have good communication and collaborative skills.');
-      recommendations.push('Roles that involve teamwork would be a good fit.');
-      recommendations.push('Consider positions that leverage your interpersonal abilities.');
-    } else if (score >= 40) {
-      recommendations.push('You have a detail-oriented, methodical approach.');
-      recommendations.push('Consider specialist or technical roles that require precision.');
-      recommendations.push('Roles that involve planning and organization would fit well.');
-    } else {
-      recommendations.push('You have creative, out-of-the-box thinking capabilities.');
-      recommendations.push('Consider roles that value innovative approaches.');
-      recommendations.push('Environments that are less structured might suit you better.');
-    }
-  } else if (assessmentType === 'career') {
-    if (score >= 80) {
-      recommendations.push('You have strong aptitude for technical and analytical roles.');
-      recommendations.push('Consider careers in software development, data analysis, or engineering.');
-      recommendations.push('Your logical thinking skills are highly developed.');
-    } else if (score >= 60) {
-      recommendations.push('You show strengths in organization and planning.');
-      recommendations.push('Consider careers in project management, operations, or administration.');
-      recommendations.push('Roles requiring systematic approaches would be a good fit.');
-    } else if (score >= 40) {
-      recommendations.push('You have skills well-suited for creative or communication-focused roles.');
-      recommendations.push('Consider careers in marketing, design, or content creation.');
-      recommendations.push('Positions that value innovative thinking would be appropriate.');
-    } else {
-      recommendations.push('You have qualities suited for people-oriented roles.');
-      recommendations.push('Consider careers in HR, customer service, or education.');
-      recommendations.push('Positions focused on interpersonal interactions would be a good fit.');
-    }
-  } else { // academic
-    if (score >= 80) {
-      recommendations.push('You show strong academic potential in theoretical subjects.');
-      recommendations.push('Consider pursuing advanced degrees in your field of interest.');
-      recommendations.push('Research-oriented programs would be well-suited to your abilities.');
-    } else if (score >= 60) {
-      recommendations.push('You have a good balance of academic and practical skills.');
-      recommendations.push('Consider programs that combine theory with hands-on learning.');
-      recommendations.push('Professional degree programs might be a good fit.');
-    } else if (score >= 40) {
-      recommendations.push('You have strengths in applied and practical learning.');
-      recommendations.push('Consider programs with strong internship or co-op components.');
-      recommendations.push('Vocational or technical programs might align well with your approach.');
-    } else {
-      recommendations.push('You have a unique learning style that may benefit from alternative approaches.');
-      recommendations.push('Consider self-directed learning or specialized programs.');
-      recommendations.push('Programs with flexible structures might work best for you.');
-    }
+  switch (assessmentType.toLowerCase()) {
+    case 'personality':
+      if (score < 50) {
+        recommendations.push(
+          'Consider exploring roles that allow for independent work',
+          'Look into technical or analytical career paths'
+        );
+      } else {
+        recommendations.push(
+          'Consider roles that involve team collaboration',
+          'Look into people-oriented career paths'
+        );
+      }
+      break;
+      
+    case 'aptitude':
+      if (score < 50) {
+        recommendations.push(
+          'Focus on building foundational skills',
+          'Consider additional training or education'
+        );
+      } else {
+        recommendations.push(
+          'You show strong aptitude - consider advanced roles',
+          'Look into leadership or specialized positions'
+        );
+      }
+      break;
+      
+    case 'interest':
+      if (score < 50) {
+        recommendations.push(
+          'Explore different career fields to find your passion',
+          'Consider career counseling'
+        );
+      } else {
+        recommendations.push(
+          'Your interests align well with your chosen field',
+          'Consider specializing further in your area of interest'
+        );
+      }
+      break;
+      
+    default:
+      recommendations.push(
+        'Consider discussing results with a career counselor',
+        'Explore various career paths to find the best fit'
+      );
   }
   
   return recommendations;
-} 
+}
+
+// Helper function to determine career pathways
+function determineCareerPathways(assessments: Array<{category: string, score: number}>): string[] {
+  const pathways: string[] = [];
+  
+  assessments.forEach(assessment => {
+    if (assessment.category.toLowerCase() === 'personality') {
+      if (assessment.score < 50) {
+        pathways.push('Independent Work');
+        pathways.push('Technical or Analytical');
+      } else {
+        pathways.push('Team Collaboration');
+        pathways.push('People-Oriented');
+      }
+    } else if (assessment.category.toLowerCase() === 'aptitude') {
+      if (assessment.score < 50) {
+        pathways.push('Foundational Skills');
+        pathways.push('Additional Training or Education');
+      } else {
+        pathways.push('Advanced Roles');
+        pathways.push('Leadership or Specialized Positions');
+      }
+    } else if (assessment.category.toLowerCase() === 'interest') {
+      if (assessment.score < 50) {
+        pathways.push('Exploring Different Fields');
+        pathways.push('Career Counseling');
+      } else {
+        pathways.push('Interest Alignment');
+        pathways.push('Specializing Further');
+      }
+    }
+  });
+  
+  return pathways;
+}
