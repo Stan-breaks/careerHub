@@ -24,6 +24,17 @@ interface AssessmentResult {
   score: number;
   recommendations: string[];
   completedAt: string;
+  courseRecommendations: {
+    courseId: string;
+    title: string;
+    score: number;
+    matchFactors: {
+      careerPathwayMatch: number;
+      skillGapMatch: number;
+      levelMatch: number;
+      prerequisiteMatch: number;
+    };
+  }[];
 }
 
 export default function Profile() {
@@ -176,39 +187,72 @@ export default function Profile() {
                 <div className="space-y-6">
                   {assessmentResults.map((result) => (
                     <div key={result.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                      <div className="flex justify-between items-start mb-3">
+                      <div className="flex justify-between items-start">
                         <div>
-                          <h3 className="font-medium text-gray-800">{result.assessmentTitle}</h3>
+                          <h3 className="text-lg font-medium text-gray-900">
+                            {result.assessmentTitle}
+                          </h3>
                           <p className="text-sm text-gray-500">
                             Completed on {new Date(result.completedAt).toLocaleDateString()}
                           </p>
                         </div>
-                        <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded capitalize">
-                          {result.assessmentType}
-                        </span>
-                      </div>
-                      
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-gray-700">Score</span>
-                          <span className="text-sm font-bold text-blue-600">{result.score}</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2.5">
-                          <div 
-                            className="bg-blue-600 h-2.5 rounded-full" 
-                            style={{ width: `${Math.min(100, (result.score / 100) * 100)}%` }}
-                          ></div>
+                        <div className="text-right">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            Score: {result.score}
+                          </span>
                         </div>
                       </div>
-                      
+
                       {result.recommendations && result.recommendations.length > 0 && (
-                        <div>
+                        <div className="mt-4">
                           <h4 className="text-sm font-semibold text-gray-700 mb-2">Recommendations</h4>
                           <ul className="text-sm text-gray-600 space-y-1 pl-5 list-disc">
                             {result.recommendations.map((recommendation, index) => (
                               <li key={index}>{recommendation}</li>
                             ))}
                           </ul>
+                        </div>
+                      )}
+
+                      {result.courseRecommendations && result.courseRecommendations.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Recommended Courses</h4>
+                          <div className="space-y-3">
+                            {result.courseRecommendations.map((rec, index) => (
+                              <div key={index} className="bg-white p-3 rounded-md shadow-sm">
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <h5 className="text-sm font-medium text-gray-900">{rec.title}</h5>
+                                    <div className="mt-1 flex items-center">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                        Match Score: {Math.round(rec.score * 100)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <Link
+                                    href={`/courses/${rec.courseId}`}
+                                    className="text-sm text-blue-600 hover:text-blue-800"
+                                  >
+                                    View Course
+                                  </Link>
+                                </div>
+                                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                  <div>
+                                    <span className="font-medium">Career Match:</span> {Math.round(rec.matchFactors.careerPathwayMatch * 100)}%
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Skill Gap:</span> {Math.round(rec.matchFactors.skillGapMatch * 100)}%
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Level Match:</span> {Math.round(rec.matchFactors.levelMatch * 100)}%
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Prerequisites:</span> {Math.round(rec.matchFactors.prerequisiteMatch * 100)}%
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                       
