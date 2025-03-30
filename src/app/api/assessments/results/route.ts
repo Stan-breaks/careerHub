@@ -2,9 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/mongodb";
-import Assessment, { Result } from "@/models/Assessment";
+import Assessment, { IQuestion } from "@/models/Assessment";
+import Result from "@/models/Result";
 import User from "@/models/User";
 import Course from "@/models/Course";
+import { RecommendationEngine } from "@/utils/recommendationEngine";
+import { Types } from "mongoose";
+import mongoose from "mongoose";
+
+interface AssessmentAnswer {
+  questionId: string;
+  selectedOption: number;
+}
 
 // POST to submit assessment results
 export async function POST(request: NextRequest) {
@@ -19,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { assessmentId, answers } = body;
+    const { assessmentId, answers }: { assessmentId: string; answers: AssessmentAnswer[] } = body;
 
     // Validate required fields
     if (!assessmentId || !answers || !Array.isArray(answers) || answers.length === 0) {
@@ -32,7 +41,7 @@ export async function POST(request: NextRequest) {
     await dbConnect();
 
     // Check if assessment exists
-    const assessment = await Assessment.findById(assessmentId).populate("questions");
+    const assessment = await Assessment.findById(assessmentId).populate<{ questions: IQuestion[] }>("questions");
     
     if (!assessment) {
       return NextResponse.json(
@@ -58,82 +67,56 @@ export async function POST(request: NextRequest) {
     // Process answers and calculate score
     for (const answer of answers) {
       const question = assessment.questions.find(
-        (q: any) => q._id.toString() === answer.questionId
+        (q) => q._id && q._id.toString() === answer.questionId
       );
       
-      if (question && question.options[answer.selectedOption]) {
+      if (question?.options?.[answer.selectedOption]) {
         totalScore += question.options[answer.selectedOption].value;
       }
     }
 
-    // Generate recommendations based on assessment type and score
-    if (assessment.type === "personality") {
-      if (totalScore >= 0 && totalScore <= 10) {
-        recommendations.push("You might enjoy courses that involve independent work.");
-        recommendations.push("Consider careers that allow for autonomy and creativity.");
-      } else if (totalScore > 10 && totalScore <= 20) {
-        recommendations.push("You might thrive in collaborative environments.");
-        recommendations.push("Consider careers that involve teamwork and communication.");
-      } else {
-        recommendations.push("You show leadership potential.");
-        recommendations.push("Consider careers that allow you to guide and mentor others.");
-      }
-    } else if (assessment.type === "career") {
-      // Fetch courses that match the career interests
-      const courses = await Course.find({ isActive: true });
-      
-      // Simple matching algorithm based on score ranges
-      // In a real app, this would be more sophisticated
-      let matchingCourses;
-      
-      if (totalScore >= 0 && totalScore <= 10) {
-        matchingCourses = courses.filter((c: any) => 
-          c.careerPathways.some((p: string) => 
-            ["research", "analysis", "technology"].includes(p.toLowerCase())
-          )
-        );
-      } else if (totalScore > 10 && totalScore <= 20) {
-        matchingCourses = courses.filter((c: any) => 
-          c.careerPathways.some((p: string) => 
-            ["business", "management", "communication"].includes(p.toLowerCase())
-          )
-        );
-      } else {
-        matchingCourses = courses.filter((c: any) => 
-          c.careerPathways.some((p: string) => 
-            ["creative", "design", "arts"].includes(p.toLowerCase())
-          )
-        );
-      }
-      
-      // Add course recommendations
-      matchingCourses.slice(0, 3).forEach((course: any) => {
-        recommendations.push(`Consider the ${course.title} program which aligns with your interests.`);
-      });
-      
-    } else if (assessment.type === "academic") {
-      if (totalScore >= 0 && totalScore <= 10) {
-        recommendations.push("You might benefit from courses with practical, hands-on learning.");
-        recommendations.push("Consider programs that offer internships and field experience.");
-      } else if (totalScore > 10 && totalScore <= 20) {
-        recommendations.push("You might excel in research-oriented academic programs.");
-        recommendations.push("Consider programs that emphasize theoretical knowledge and analysis.");
-      } else {
-        recommendations.push("You might enjoy interdisciplinary programs.");
-        recommendations.push("Consider programs that combine multiple fields of study.");
-      }
+    // Get user's assessment history
+    const user = await User.findById(session.user.id);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "User not found" },
+        { status: 404 }
+      );
     }
 
+    const userResults = await Result.find({ userId: session.user.id })
+      .populate('assessmentId')
+      .lean();
+
+    // Get all active courses
+    const courses = await Course.find({ isActive: true }).lean();
+
+    // Generate personalized course recommendations
+    const courseRecommendations = RecommendationEngine.generateRecommendations(
+      courses,
+      user,
+      userResults
+    );
+
+    // Generate personalized recommendation text
+    courseRecommendations.forEach(rec => {
+      recommendations.push(...RecommendationEngine.generateRecommendationText(rec));
+    });
+
     // Create result record
-    const result = await Result.create({
-      user: session.user.id,
-      assessment: assessmentId,
-      answers: answers.map(a => ({
-        question: a.questionId,
-        selectedOption: a.selectedOption,
+    const result = new Result({
+      userId: new mongoose.Types.ObjectId(session.user.id),
+      assessmentId: new mongoose.Types.ObjectId(assessmentId),
+      answers: answers.map((answer: AssessmentAnswer) => ({
+        questionId: new mongoose.Types.ObjectId(answer.questionId),
+        selectedOption: parseInt(answer.selectedOption.toString(), 10) || 0
       })),
       score: totalScore,
       recommendations,
+      recommendedCourses: courseRecommendations.map(rec => rec.course._id),
+      careerPathways: assessment.type === 'career' ? 
+        courseRecommendations.map(rec => rec.course.careerPathways[0]) : 
+        [],
       completedAt: new Date(),
     });
 
@@ -151,6 +134,12 @@ export async function POST(request: NextRequest) {
         score: result.score,
         recommendations: result.recommendations,
         completedAt: result.completedAt,
+        courseRecommendations: courseRecommendations.map(rec => ({
+          courseId: rec.course._id,
+          title: rec.course.title,
+          score: rec.score,
+          matchFactors: rec.matchFactors
+        }))
       },
     });
   } catch (error: any) {
@@ -159,4 +148,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}
