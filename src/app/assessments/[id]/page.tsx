@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { use } from 'react';
 
 interface Option {
   id: string | null;
@@ -30,13 +31,30 @@ interface Answer {
   selectedOption: string;
 }
 
+interface CourseRecommendation {
+  courseId: string;
+  title: string;
+  code: string;
+  description: string;
+  duration: string;
+  level: string;
+  skillsDeveloped: string[];
+  careerPathways: string[];
+  score: number;
+  matchFactors: {
+    [key: string]: number;
+  };
+}
+
 interface Result {
   score: number;
   recommendations: string[];
+  recommendedCourses: CourseRecommendation[];
   completedAt: string;
 }
 
-export default function AssessmentDetail({ params }: { params: { id: string } }) {
+export default function AssessmentDetail({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
   const { data: session, status } = useSession();
   const router = useRouter();
   const [assessment, setAssessment] = useState<Assessment | null>(null);
@@ -65,7 +83,7 @@ export default function AssessmentDetail({ params }: { params: { id: string } })
     const fetchAssessment = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/assessments/${params.id}`);
+        const response = await fetch(`/api/assessments/${resolvedParams.id}`);
         
         if (!response.ok) {
           throw new Error(`Failed to fetch assessment: ${response.statusText}`);
@@ -85,7 +103,7 @@ export default function AssessmentDetail({ params }: { params: { id: string } })
       checkVerification();
       fetchAssessment();
     }
-  }, [session, params.id]);
+  }, [session, resolvedParams.id]);
 
   const handleOptionSelect = (optionId: string) => {
     setSelectedOption(optionId);
@@ -122,7 +140,7 @@ export default function AssessmentDetail({ params }: { params: { id: string } })
     try {
       setSubmitting(true);
       
-      const response = await fetch(`/api/assessments/${params.id}`, {
+      const response = await fetch(`/api/assessments/${resolvedParams.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -225,7 +243,7 @@ export default function AssessmentDetail({ params }: { params: { id: string } })
   if (result) {
     return (
       <div className="container mx-auto px-4 py-12">
-        <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
+        <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
           <div className="p-6 bg-blue-50 border-b border-blue-100">
             <h1 className="text-2xl font-bold text-blue-800">Assessment Completed!</h1>
             <p className="text-blue-600 mt-2">
@@ -264,6 +282,79 @@ export default function AssessmentDetail({ params }: { params: { id: string } })
                 ))}
               </ul>
             </div>
+
+            {result.recommendedCourses && result.recommendedCourses.length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-gray-800 mb-3">Recommended Courses</h2>
+                <div className="grid grid-cols-1 gap-4">
+                  {result.recommendedCourses.map((course) => (
+                    <div
+                      key={course.courseId}
+                      className="bg-white rounded-lg border border-gray-200 hover:border-blue-400 transition-colors duration-200 p-4"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {course.title}
+                          </h3>
+                          <p className="text-sm text-gray-600">
+                            Code: {course.code} | Duration: {course.duration}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize bg-blue-100 text-blue-800">
+                            {course.level}
+                          </span>
+                          <span className="text-sm font-medium text-green-600 mt-1">
+                            Match Score: {Math.round(course.score)}%
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <p className="text-gray-700 mb-3">{course.description}</p>
+                      
+                      {course.skillsDeveloped && course.skillsDeveloped.length > 0 && (
+                        <div className="mb-3">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                            Skills You'll Develop:
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {course.skillsDeveloped.map((skill) => (
+                              <span
+                                key={skill}
+                                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                              >
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {course.matchFactors && Object.keys(course.matchFactors).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                            Match Factors:
+                          </h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {Object.entries(course.matchFactors).map(([factor, score]) => (
+                              <div key={factor} className="flex items-center">
+                                <span className="text-xs text-gray-600 capitalize">
+                                  {factor.replace(/([A-Z])/g, ' $1').trim()}:
+                                </span>
+                                <span className="ml-1 text-xs font-medium text-blue-600">
+                                  {Math.round(score)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-between items-center pt-4 border-t border-gray-200">
               <Link
