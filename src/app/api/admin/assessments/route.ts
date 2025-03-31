@@ -80,6 +80,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate assessment type
+    if (!['personality', 'career', 'academic'].includes(body.type)) {
+      return NextResponse.json(
+        { error: 'Invalid assessment type. Must be one of: personality, career, academic' },
+        { status: 400 }
+      );
+    }
+
     const userId = new mongoose.Types.ObjectId(session.user.id);
     
     // Check if we're creating an assessment with inline questions
@@ -87,10 +95,14 @@ export async function POST(request: NextRequest) {
         typeof body.questions[0] === 'object' && body.questions[0].text) {
       
       // Create questions first
-      const questionDocs = body.questions.map((q: { text: string, options?: Array<{ text: string, value: number }> }) => ({
+      const questionDocs = body.questions.map((q: { 
+        text: string, 
+        options?: Array<{ text: string, value: number }> 
+      }) => ({
         text: q.text,
-        type: 'multiple-choice' as const, // Default type for now
+        type: 'multiple-choice' as const,
         options: q.options || [],
+        category: body.type, // Set category same as assessment type
         createdBy: userId
       }));
       
@@ -125,6 +137,29 @@ export async function POST(request: NextRequest) {
     } 
     // Regular assessment creation with question IDs
     else {
+      // Validate that all questions exist and match the assessment type
+      if (body.questions && body.questions.length > 0) {
+        const existingQuestions = await Question.find({
+          _id: { $in: body.questions }
+        });
+
+        if (existingQuestions.length !== body.questions.length) {
+          return NextResponse.json(
+            { error: 'One or more questions do not exist' },
+            { status: 400 }
+          );
+        }
+
+        // Check if all questions match the assessment type
+        const invalidQuestions = existingQuestions.filter(q => q.category !== body.type);
+        if (invalidQuestions.length > 0) {
+          return NextResponse.json(
+            { error: 'All questions must match the assessment type' },
+            { status: 400 }
+          );
+        }
+      }
+
       // Create new assessment
       const newAssessment = new Assessment({
         title: body.title,
