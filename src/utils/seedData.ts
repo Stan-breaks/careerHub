@@ -23,6 +23,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "How do you prefer to solve problems?",
       type: "multiple-choice" as const,
+      category: "career",
       options: [
         { text: "Methodically analyzing all available information", value: 8 },
         { text: "Following your intuition and gut feeling", value: 4 },
@@ -34,6 +35,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "Which work environment would you thrive in most?",
       type: "multiple-choice" as const,
+      category: "career",
       options: [
         { text: "A structured office with clear procedures", value: 8 },
         { text: "A creative space with flexible hours", value: 5 },
@@ -45,6 +47,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "When learning something new, you prefer to:",
       type: "multiple-choice" as const,
+      category: "career",
       options: [
         { text: "Read detailed documentation and follow step-by-step guides", value: 7 },
         { text: "Watch someone demonstrate and then try it yourself", value: 5 },
@@ -56,6 +59,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "When working on a project, what aspect is most important to you?",
       type: "multiple-choice" as const,
+      category: "career",
       options: [
         { text: "Meeting deadlines and staying on schedule", value: 6 },
         { text: "Creating innovative and unique solutions", value: 8 },
@@ -67,6 +71,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "How do you handle unexpected challenges?",
       type: "multiple-choice" as const,
+      category: "career",
       options: [
         { text: "Carefully analyze the situation before proceeding", value: 7 },
         { text: "Adapt quickly and find alternative approaches", value: 8 },
@@ -82,6 +87,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "How do you approach learning new technologies?",
       type: "multiple-choice" as const,
+      category: "personality",
       options: [
         { text: "I dive deep into documentation and technical specifications", value: 8 },
         { text: "I prefer hands-on experimentation to see how things work", value: 6 },
@@ -93,6 +99,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "When debugging a complex problem, you typically:",
       type: "multiple-choice" as const,
+      category: "personality",
       options: [
         { text: "Systematically isolate variables until finding the root cause", value: 9 },
         { text: "Use intuition based on past experiences", value: 6 },
@@ -104,6 +111,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "What motivates you most in your work?",
       type: "multiple-choice" as const,
+      category: "personality",
       options: [
         { text: "Creating elegant, efficient solutions to technical challenges", value: 8 },
         { text: "Continuous learning and mastering new skills", value: 7 },
@@ -115,6 +123,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "How do you handle tight deadlines?",
       type: "multiple-choice" as const,
+      category: "personality",
       options: [
         { text: "Create a detailed plan and methodically work through it", value: 8 },
         { text: "Focus intensely and work long hours until completion", value: 6 },
@@ -126,6 +135,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "When working on a team project, which role do you naturally assume?",
       type: "multiple-choice" as const,
+      category: "personality",
       options: [
         { text: "Technical lead focusing on architecture and implementation", value: 8 },
         { text: "Project coordinator ensuring everyone stays on track", value: 6 },
@@ -137,6 +147,7 @@ export async function seedDefaultAssessments(adminId: string): Promise<void> {
     {
       text: "How do you prefer to communicate about technical concepts?",
       type: "multiple-choice" as const,
+      category: "personality",
       options: [
         { text: "Detailed written documentation with examples", value: 8 },
         { text: "Visual diagrams and flowcharts", value: 7 },
