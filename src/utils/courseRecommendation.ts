@@ -127,13 +127,15 @@ function calculateCourseRelevance(
     selectedCategories
   );
 
-  const relevanceScore = Math.min(100, 
-    pathwayMatch + 
-    levelMatch + 
-    skillsMatch +
-    categoryMatch + 
-    diversityBonus
-  );
+  // Adjust weights to favor diversity
+  const weightedScore = 
+    (pathwayMatch * 0.3) +     // 30% pathway match
+    (levelMatch * 0.2) +       // 20% level match
+    (skillsMatch * 0.15) +     // 15% skills match
+    (categoryMatch * 0.15) +   // 15% category match
+    (diversityBonus * 0.2);    // 20% diversity bonus
+
+  const relevanceScore = Math.min(100, Math.round(weightedScore));
 
   return {
     relevanceScore,
@@ -263,22 +265,22 @@ function calculateDiversityBonus(
 ): number {
   let bonus = 0;
 
-  // Bonus for unique pathway (0-5 points)
+  // Bonus for unique pathways (0-40 points)
   const uniquePathways = (course.careerPathways || [])
     .filter(p => !selectedPathways.has(p)).length;
-  bonus += Math.min(5, uniquePathways * 2);
+  bonus += Math.min(40, uniquePathways * 15);
 
-  // Bonus for unique level (0-5 points)
+  // Bonus for unique level (0-30 points)
   if (course.level && !selectedLevels.has(course.level)) {
-    bonus += 5;
+    bonus += 30;
   }
 
-  // Bonus for unique skills (0-5 points)
+  // Bonus for unique skills (0-30 points)
   const uniqueSkills = (course.skillsDeveloped || [])
     .filter(s => !selectedCategories.has(s.toLowerCase())).length;
-  bonus += Math.min(5, uniqueSkills);
+  bonus += Math.min(30, uniqueSkills * 10);
 
-  return bonus;
+  return Math.min(100, bonus);
 }
 
 function diversifyRecommendations(
@@ -291,6 +293,7 @@ function diversifyRecommendations(
   const selected: typeof courses = [];
   const seenPathways = new Set<string>();
   const seenLevels = new Set<string>();
+  const seenSkills = new Set<string>();
 
   // First, add the top scoring course
   if (courses.length > 0) {
@@ -300,32 +303,43 @@ function diversifyRecommendations(
     selected.push(topCourse);
     topCourse.careerPathways?.forEach(p => seenPathways.add(p));
     if (topCourse.level) seenLevels.add(topCourse.level);
+    topCourse.skillsDeveloped?.forEach(s => seenSkills.add(s.toLowerCase()));
   }
 
   // Then add diverse recommendations
-  const remaining = courses.filter(c => !selected.includes(c))
-    .sort((a, b) => b.relevanceScore - a.relevanceScore);
+  const remaining = courses.filter(c => !selected.includes(c));
 
   while (selected.length < count && remaining.length > 0) {
-    // Find the highest scoring course that adds diversity
-    const nextIndex = remaining.findIndex(course => {
-      const hasNewPathway = (course.careerPathways || [])
-        .some(p => !seenPathways.has(p));
-      const hasNewLevel = course.level && 
-        !seenLevels.has(course.level);
-      
-      return hasNewPathway || hasNewLevel;
+    // Calculate diversity scores for remaining courses
+    const scoredCourses = remaining.map(course => {
+      const uniquePathways = (course.careerPathways || [])
+        .filter(p => !seenPathways.has(p)).length;
+      const uniqueLevel = course.level && !seenLevels.has(course.level);
+      const uniqueSkills = (course.skillsDeveloped || [])
+        .filter(s => !seenSkills.has(s.toLowerCase())).length;
+
+      const diversityScore = 
+        (uniquePathways * 15) +
+        (uniqueLevel ? 30 : 0) +
+        (uniqueSkills * 10);
+
+      return {
+        course,
+        score: (course.relevanceScore * 0.6) + (diversityScore * 0.4)
+      };
     });
 
-    const nextCourse = remaining[nextIndex !== -1 ? nextIndex : 0];
-    if (!nextCourse) break;
+    // Select the course with the best combined score
+    const bestCourse = scoredCourses.sort((a, b) => b.score - a.score)[0]?.course;
+    if (!bestCourse) break;
 
-    selected.push(nextCourse);
-    remaining.splice(nextIndex !== -1 ? nextIndex : 0, 1);
+    selected.push(bestCourse);
+    remaining.splice(remaining.indexOf(bestCourse), 1);
 
-    // Update seen pathways and levels
-    nextCourse.careerPathways?.forEach(p => seenPathways.add(p));
-    if (nextCourse.level) seenLevels.add(nextCourse.level);
+    // Update seen attributes
+    bestCourse.careerPathways?.forEach(p => seenPathways.add(p));
+    if (bestCourse.level) seenLevels.add(bestCourse.level);
+    bestCourse.skillsDeveloped?.forEach(s => seenSkills.add(s.toLowerCase()));
   }
 
   return selected;
@@ -335,53 +349,53 @@ function determineCareerPathways(scores: AssessmentScore[]): string[] {
   const pathwayMappings: PathwayMapping = {
     'personality': {
       low: [
-        'Technical Support',
-        'Quality Assurance',
-        'Documentation'
+        'Software Developer',
+        'Data Scientist',
+        'DevOps Engineer'
       ],
       medium: [
-        'Software Development',
-        'Data Analysis',
-        'Technical Writing'
+        'UX/UI Designer',
+        'Business Analyst',
+        'Project Manager'
       ],
       high: [
-        'Project Management',
-        'Team Leadership',
-        'Product Management'
+        'Cloud Solutions Architect',
+        'Cybersecurity Analyst',
+        'Project Manager'
       ]
     },
-    'aptitude': {
+    'career': {
       low: [
-        'Content Creation',
-        'Digital Marketing',
-        'User Support'
+        'Software Developer',
+        'UX/UI Designer',
+        'Business Analyst'
       ],
       medium: [
-        'Web Development',
-        'Data Analysis',
-        'System Administration'
+        'Data Scientist',
+        'DevOps Engineer',
+        'Project Manager'
       ],
       high: [
-        'Software Architecture',
-        'Data Science',
-        'Systems Design'
+        'Cloud Solutions Architect',
+        'Cybersecurity Analyst',
+        'Software Developer'
       ]
     },
-    'interest': {
+    'academic': {
       low: [
-        'Career Exploration',
-        'Skill Development',
-        'Professional Basics'
+        'Business Analyst',
+        'UX/UI Designer',
+        'Software Developer'
       ],
       medium: [
-        'Full-Stack Development',
-        'Cloud Computing',
-        'DevOps'
+        'Data Scientist',
+        'DevOps Engineer',
+        'Project Manager'
       ],
       high: [
-        'AI/ML Engineering',
-        'Blockchain Development',
-        'Research & Innovation'
+        'Cloud Solutions Architect',
+        'Cybersecurity Analyst',
+        'Data Scientist'
       ]
     }
   };
@@ -404,10 +418,10 @@ function determineCareerPathways(scores: AssessmentScore[]): string[] {
   });
 
   if (recommendedPathways.size === 0) {
-    Object.values(pathwayMappings).forEach(categoryPathways => {
-      [...categoryPathways.low, ...categoryPathways.medium, ...categoryPathways.high]
-        .forEach(pathway => recommendedPathways.add(pathway));
-    });
+    // Default to a mix of entry-level paths if no matches
+    recommendedPathways.add('Software Developer');
+    recommendedPathways.add('Business Analyst');
+    recommendedPathways.add('UX/UI Designer');
   }
 
   return Array.from(recommendedPathways).slice(0, 5);
